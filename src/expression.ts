@@ -9,8 +9,105 @@ export const NodeType = {
     _Multiplication:5,
     _Negation:6,
     _Subtraction:7,
-    _Addition:8
+	_Addition:8,
+	_Inverse:9
 };
+function simplifyMultiplication(node:Multiplication|Division):Expression{
+	let stack:Expression[] = [];
+	stack.push(node);
+	let operands:Expression[] = []
+	let constants:Constant[] = [];
+	while(stack.length!=0){
+		let current = stack.pop();
+		if(current instanceof Multiplication){
+			stack.push(current.right.simplify());
+			stack.push(current.left.simplify());
+		}else if(current instanceof Subtraction){
+			stack.push(new Inverse(current.right).simplify());
+			stack.push(current.left.simplify());
+		}else if (current instanceof Constant){
+			constants.push(current);
+		}else{
+			operands.push(current);
+		}
+	}
+	let root:Expression;
+	if(constants.length>0){
+		let result = new Constant(1.);
+		constants.forEach((node)=>{
+			result.value*=node.value;
+		});
+		root = result;
+		if (result.value==1.0)
+		{
+			if (operands.length > 0)
+			{
+				root = operands.pop();
+			}
+		}else if(result.value==0.0){
+			return result;
+		}
+	}else{
+		root = operands.pop();
+	}
+	if(root instanceof Inverse){
+		root = new Division(new Constant(1.0),root.inner);
+	}
+	operands.forEach((operand)=>{
+		if(operand instanceof Inverse){
+			root = new Division(root,operand.inner);
+		}else{
+			root = new Addition(root,operand);
+		}
+	});
+	return root;
+}
+
+function simplifyAddition(node:Addition|Subtraction):Expression{
+	let stack:Expression[] = [];
+	stack.push(node);
+	let operands:Expression[] = []
+	let constants:Constant[] = [];
+	while(stack.length!=0){
+		let current = stack.pop();
+		if(current instanceof Addition){
+			stack.push(current.right.simplify());
+			stack.push(current.left.simplify());
+		}else if(current instanceof Subtraction){
+			stack.push(new Negation(current.right).simplify());
+			stack.push(current.left.simplify());
+		}else if (current instanceof Constant){
+			constants.push(current);
+		}else{
+			operands.push(current);
+		}
+	}
+	let root:Expression;
+	if(constants.length>0){
+		let result = new Constant(0.);
+		constants.forEach((node)=>{
+			result.value+=node.value;
+		});
+		root = result;
+		if (result.value==0.0)
+		{
+			if (operands.length > 0)
+			{
+				root = operands.pop();
+			}
+		}
+	}else{
+		root = operands.pop();
+	}
+	operands.forEach((operand)=>{
+		if(operand instanceof Negation){
+			root = new Subtraction(root,operand.inner);
+		}else{
+			root = new Addition(root,operand);
+		}
+	});
+	return root;
+}
 
 export abstract class Expression{
     type:number;
@@ -47,6 +144,40 @@ export class Constant extends Expression{
 	}
 	printLatex():string{
 		return this.value.toString();
+	}
+}
+export class Inverse extends Expression{
+	inner:Expression;
+	constructor(inner:Expression){
+		super(NodeType._Inverse);
+		this.inner = inner;
+	}
+    clone(){
+        return new Inverse(this.inner.clone());
+    }
+	differentiate(variable:string, epsilon:number){
+		return new Division(this.inner.differentiate(variable,epsilon),new Multiplication(this.inner.clone(),this.inner.clone()));
+	}
+    $eval(variables:Record<string,number>|number[]):number{
+        return 1./this.inner.$eval(variables);
+    }
+	simplify(){
+		let node = this.inner.simplify();
+		if(node instanceof Constant)
+			return new Constant(1/node.value);
+		if(node instanceof Division){
+			return new Division(node.right,node.left);
+		}
+		return new Inverse(node);
+	}
+	print():string{
+		let arg = this.inner.print();
+		return "1/"+(this.inner.type>=this.type?"("+arg+")":arg);
+	
+	}
+	printLatex():string{
+		let arg = this.inner.printLatex();
+		return "\\frac{1/"+(this.inner.type>=this.type?"("+arg+")":arg)+"}";
 	}
 }
 export class Negation extends Expression{
@@ -114,7 +245,8 @@ export class Multiplication extends BinaryOp{
         return this.left.$eval(variables)*this.right.$eval(variables);
     }
 	simplify(){
-		let l = this.left.simplify();
+		return simplifyMultiplication(this);
+		/*let l = this.left.simplify();
 		let r = this.right.simplify();
 		if(l instanceof Constant){
 			if(r instanceof Constant){
@@ -134,7 +266,7 @@ export class Multiplication extends BinaryOp{
 			if(r.value == -1)
 				return new Negation(l);
 		}
-		return new Multiplication(l,r);
+		return new Multiplication(l,r);*/
 	}
 	print():string{
 		let l = this.left.print();
@@ -164,6 +296,8 @@ export class Addition extends BinaryOp{
         return this.left.$eval(variables)+this.right.$eval(variables);
     }
 	simplify(){
+		return simplifyAddition(this);
+/*
 		let l = this.left.simplify();
 		let r = this.right.simplify();
 		if(l instanceof Constant){
@@ -176,7 +310,7 @@ export class Addition extends BinaryOp{
 			if(Math.abs(r.value)==0.0)
 				return l;
 		}
-		return new Addition(l,r);
+		return new Addition(l,r);*/
 	}
 	print():string{
 		let l = this.left.print();
@@ -206,7 +340,8 @@ export class Subtraction extends BinaryOp{
         return this.left.$eval(variables)-this.right.$eval(variables);
     }
 	simplify(){
-		let l = this.left.simplify();
+		return simplifyAddition(this);
+		/*let l = this.left.simplify();
 		let r = this.right.simplify();
 		if(l instanceof Constant){
 			if(r instanceof Constant){
@@ -218,7 +353,7 @@ export class Subtraction extends BinaryOp{
 			if(Math.abs(r.value)==0)
 				return l;
 		}
-		return new Subtraction(l,r);
+		return new Subtraction(l,r);*/
 	}
 	print():string{
 		let l = this.left.print();
@@ -248,9 +383,7 @@ export class Division extends BinaryOp{
 				this.right.differentiate(variable,epsilon),
 				new Division(
 					this.left.clone(),
-					new Function("pow",[
-						this.right.clone(),new Constant(2)]
-					)
+					new Multiplication(this.right.clone(),this.right.clone())
 				)
 			)
 		);
@@ -259,7 +392,8 @@ export class Division extends BinaryOp{
         return this.left.$eval(variables)/this.right.$eval(variables);
     }
 	simplify(){
-		let l = this.left.simplify();
+		return simplifyMultiplication(this);
+		/*let l = this.left.simplify();
 		let r = this.right.simplify();
 		if(l instanceof Constant){
 			if(Math.abs(l.value)==0.0)
@@ -273,7 +407,7 @@ export class Division extends BinaryOp{
 			if(r.value == -1)
 				return new Negation(l);
 		}
-		return new Division(l,r);
+		return new Division(l,r);*/
 	}
 	print():string{
 		let l = this.left.print();
