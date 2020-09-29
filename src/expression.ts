@@ -22,7 +22,7 @@ function simplifyMultiplication(node:Multiplication|Division):Expression{
 		if(current instanceof Multiplication){
 			stack.push(current.right.simplify());
 			stack.push(current.left.simplify());
-		}else if(current instanceof Subtraction){
+		}else if(current instanceof Division){
 			stack.push(new Inverse(current.right).simplify());
 			stack.push(current.left.simplify());
 		}else if (current instanceof Constant){
@@ -57,7 +57,7 @@ function simplifyMultiplication(node:Multiplication|Division):Expression{
 		if(operand instanceof Inverse){
 			root = new Division(root,operand.inner);
 		}else{
-			root = new Addition(root,operand);
+			root = new Multiplication(root,operand);
 		}
 	});
 	return root;
